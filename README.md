@@ -1,12 +1,10 @@
-# K8s Ephemeral Storage Metrics.
+# Kubelet stats metrics.
+
+Project based on https://github.com/jmcgrath207/k8s-ephemeral-storage-metrics
 
 
-The goal of this project is to export ephemeral storage metric usage per pod to Prometheus that is address in this 
-issue [Here](https://github.com/kubernetes/kubernetes/issues/69507)
+## Exported metrics
 
-Currently, this image is not being hosted and so you have to build it yourself at the moment. 
-
-
-![main image](img/screenshot.png)
-
-
+* kubelet_stats_ephemeral_storage_pod_usage (pod_namespace, pod_name, node_name)
+* kubelet_stats_rootfs_pod_container_usage (pod_namespace, pod_name, container_name, node_name)
+* 

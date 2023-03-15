@@ -1,0 +1,25 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "kubelet-stats-metrics.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "kubelet-stats-metrics.labels" . | nindent 4 }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      k8s-app: {{ .Release.Name }}
+  podMetricsEndpoints:
+    - port: http
+      interval: 30s
+      #relabelings:
+      #  - action: replace
+      #    sourceLabels:
+      #      - __meta_kubernetes_pod_node_name
+      #    targetLabel: node_name
+      #  - action: replace
+      #    sourceLabels:
+      #      - __meta_kubernetes_pod_host_ip
+      #    targetLabel: instance

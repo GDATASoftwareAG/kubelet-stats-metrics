@@ -1,3 +1,2 @@
 image: registry.lab.com/k8s-ephemeral-storage-metrics
-log_level: info
-deploy_type: DaemonSet
+logLevel: info

@@ -1,10 +1,10 @@
 apiVersion: v2
-name: k8s-ephemeral-storage-metrics
-version: 1.0.0
-appVersion: "1.0.0"
+name: kubelet-stats-metrics
+version: 0.1.0
+appVersion: "0.1.0"
 kubeVersion: ">=1.21.0-0"
-description: Ephemeral storage metrics for prometheus operator.
-home: https://github.com/jmcgrath207/k8s-ephemeral-storage-metrics
+description: Expose kubelet stats metrics to prometheus
+home: https://github.com/jmcgrath207/kubelet-stats-metrics
 keywords:
 - kubernetes
 - metrics

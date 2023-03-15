@@ -1,23 +1,22 @@
 apiVersion: apps/v1
-kind: {{ .Values.deploy_type  }}
+kind: Deployment
 metadata:
-  name: k8s-ephemeral-storage-metrics
+  name: {{ include "kubelet-stats-metrics.fullname" . }}
   namespace: {{ .Release.Namespace }}
-  labels:
-    k8s-app: {{ .Release.Name }}
+  labels: {{- include "kubelet-stats-metrics.labels" . | nindent 4 }}
 spec:
   {{- if eq .Values.deploy_type "Deployment" }}
   replicas: 1
   {{- end }}
   selector:
     matchLabels:
-      k8s-app: {{ .Release.Name }}
+      {{- include "kubelet-stats-metrics.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        k8s-app: {{ .Release.Name }}
+        {{- include "kubelet-stats-metrics.selectorLabels" . | nindent 8 }}
     spec:
-      serviceAccountName: k8s-ephemeral-storage-metrics
+      serviceAccountName: kubelet-stats-metrics
       containers:
         - name: metrics
           image: {{ .Values.image }}
@@ -51,10 +50,6 @@ spec:
             successThreshold: 1
             timeoutSeconds: 1
           env:
-            - name: LOG_LEVEL
-              value: "{{ .Values.log_level }}"
-            - name: CURRENT_NODE_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
+            - name: KUBELET_STATS_METRICS_LOG_LEVEL
+              value: "{{ .Values.logLevel }}"
 

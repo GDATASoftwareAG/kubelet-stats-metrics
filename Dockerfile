@@ -1,12 +1,11 @@
 # Build the manager binary
-FROM golang:1.19.2 as builder
+FROM docker.io/library/golang:1.19.7 as builder
 
 WORKDIR /code
 
 COPY . .
 
 RUN go mod download
-
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o app main.go
 
