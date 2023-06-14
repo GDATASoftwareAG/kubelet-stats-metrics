@@ -5,14 +5,17 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"gopkg.in/alecthomas/kingpin.v2"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
+	"gopkg.in/alecthomas/kingpin.v2"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	_ "net/http/pprof"
 
 	log "github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -101,56 +104,91 @@ func getMetrics(interval time.Duration, cs *kubernetes.Clientset) {
 		if err != nil {
 			log.Fatalf("ErrorBadRequst : %s", err.Error())
 		}
+		var pods []ephemeralStoragePodData
 		for i := range nodes.Items {
 			currentNode := nodes.Items[i].Name
-			scrapeSingleNode(cs, currentNode, opsQueued, opsRootfsQueued)
+			node, err := scrapeSingleNode(cs, currentNode)
+			if err != nil {
+				log.Fatalf("ErrorBadRequst : %s", err.Error())
+			}
+			pods = append(pods, node...)
+		}
+		opsQueued.Reset()
+		opsRootfsQueued.Reset()
+		for i := range pods {
+			pod := &pods[i]
+			if pod.usedBytes != nil {
+				opsQueued.With(prometheus.Labels{
+					"pod_name":      pod.name,
+					"pod_namespace": pod.namespace,
+					"node_name":     pod.nodeName,
+				}).Set(*pod.usedBytes)
+			}
+			for k := range pod.containers {
+				container := &pod.containers[k]
+				opsRootfsQueued.With(prometheus.Labels{
+					"pod_name":       pod.name,
+					"pod_namespace":  pod.namespace,
+					"node_name":      pod.nodeName,
+					"container_name": container.name,
+				}).Set(container.usedBytes)
+			}
 		}
 		time.Sleep(interval)
 	}
 }
 
+type ephemeralStorageContainerData struct {
+	name      string
+	usedBytes float64
+}
+
+type ephemeralStoragePodData struct {
+	name       string
+	nodeName   string
+	namespace  string
+	usedBytes  *float64
+	containers []ephemeralStorageContainerData
+}
+
 func scrapeSingleNode(
 	cs *kubernetes.Clientset,
 	currentNode string,
-	opsQueued *prometheus.GaugeVec,
-	opsRootfsQueued *prometheus.GaugeVec,
-) {
+) ([]ephemeralStoragePodData, error) {
 	content, err := cs.RESTClient().Get().AbsPath(fmt.Sprintf("/api/v1/nodes/%s/proxy/stats/summary", currentNode)).DoRaw(context.Background())
 	if err != nil {
-		log.Fatalf("ErrorBadRequst : %s", err.Error())
+		return []ephemeralStoragePodData{}, err
 	}
 	log.Debugf("Fetched proxy stats from node : %s", currentNode)
 	var summary statsapi.Summary
-	_ = json.Unmarshal(content, &summary)
-
+	if err = json.Unmarshal(content, &summary); err != nil {
+		return []ephemeralStoragePodData{}, err
+	}
+	var pods []ephemeralStoragePodData
 	nodeName := summary.Node.NodeName
 	for i := range summary.Pods {
+		var podData = ephemeralStoragePodData{}
 		pod := &summary.Pods[i]
-		podName := pod.PodRef.Name
-		podNamespace := pod.PodRef.Namespace
+		podData.name = pod.PodRef.Name
+		podData.namespace = pod.PodRef.Namespace
+		podData.nodeName = nodeName
 		if pod.EphemeralStorage != nil {
 			usedBytes := float64(*pod.EphemeralStorage.UsedBytes)
-			opsQueued.With(prometheus.Labels{
-				"pod_name":      podName,
-				"pod_namespace": podNamespace,
-				"node_name":     nodeName,
-			}).Set(usedBytes)
+			podData.usedBytes = &usedBytes
 		}
 
 		for k := range pod.Containers {
 			container := &pod.Containers[k]
-			containerName := container.Name
 			if container.Rootfs != nil {
-				rootUsedBytes := float64(*container.Rootfs.UsedBytes)
-				opsRootfsQueued.With(prometheus.Labels{
-					"pod_name":       podName,
-					"pod_namespace":  podNamespace,
-					"container_name": containerName,
-					"node_name":      nodeName,
-				}).Set(rootUsedBytes)
+				podData.containers = append(podData.containers, ephemeralStorageContainerData{
+					name:      container.Name,
+					usedBytes: float64(*container.Rootfs.UsedBytes),
+				})
 			}
 		}
+		pods = append(pods, podData)
 	}
+	return pods, nil
 }
 
 // allLogLevelsAsStrings returns all logrus levels as a list of strings
