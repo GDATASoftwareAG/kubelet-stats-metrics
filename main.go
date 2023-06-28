@@ -102,14 +102,17 @@ func getMetrics(interval time.Duration, cs *kubernetes.Clientset) {
 	for {
 		nodes, err := cs.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
 		if err != nil {
-			log.Fatalf("ErrorBadRequst : %s", err.Error())
+			log.Errorf("ErrorBadRequst : %s", err.Error())
+			time.Sleep(time.Second * 60)
+			continue
 		}
 		var pods []ephemeralStoragePodData
 		for i := range nodes.Items {
 			currentNode := nodes.Items[i].Name
 			node, err := scrapeSingleNode(cs, currentNode)
 			if err != nil {
-				log.Fatalf("ErrorBadRequst : %s", err.Error())
+				log.Errorf("ErrorBadRequst : %s", err.Error())
+				continue
 			}
 			pods = append(pods, node...)
 		}
