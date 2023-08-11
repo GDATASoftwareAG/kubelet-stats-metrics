@@ -69,9 +69,9 @@ func setupClient(cfg Config) *kubernetes.Clientset {
 }
 
 func getMetrics(interval time.Duration, cs *kubernetes.Clientset) {
-	opsQueued := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	podUsageBytes := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "kubelet_stats_ephemeral_storage_pod_usage",
-		Help: "Used to expose Ephemeral Storage metrics for pod ",
+		Help: "Used to expose Ephemeral Storage metrics for pod",
 	},
 		[]string{
 			// name of pod for Ephemeral Storage
@@ -81,9 +81,36 @@ func getMetrics(interval time.Duration, cs *kubernetes.Clientset) {
 			"node_name",
 		},
 	)
-	opsRootfsQueued := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+
+	podCapacityBytes := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "kubelet_stats_ephemeral_storage_pod_capacity",
+		Help: "Used to expose Ephemeral Storage capacity for a pod",
+	},
+		[]string{
+			// name of pod for Ephemeral Storage
+			"pod_name",
+			"pod_namespace",
+			// Name of Node where pod is placed.
+			"node_name",
+		},
+	)
+
+	podAvailableBytes := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "kubelet_stats_ephemeral_storage_pod_available",
+		Help: "Used to expose Ephemeral Storage available for a pod",
+	},
+		[]string{
+			// name of pod for Ephemeral Storage
+			"pod_name",
+			"pod_namespace",
+			// Name of Node where pod is placed.
+			"node_name",
+		},
+	)
+
+	containerUsageBytes := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "kubelet_stats_rootfs_pod_container_usage",
-		Help: "Used to expose rootfs metrics for containers ",
+		Help: "Used to expose rootfs metrics for containers",
 	},
 		[]string{
 			// name of pod for Ephemeral Storage
@@ -95,7 +122,7 @@ func getMetrics(interval time.Duration, cs *kubernetes.Clientset) {
 		},
 	)
 
-	prometheus.MustRegister(opsQueued, opsRootfsQueued)
+	prometheus.MustRegister(podUsageBytes, podCapacityBytes, podAvailableBytes, containerUsageBytes)
 
 	log.Debug("getMetrics has been invoked")
 
@@ -116,20 +143,34 @@ func getMetrics(interval time.Duration, cs *kubernetes.Clientset) {
 			}
 			pods = append(pods, node...)
 		}
-		opsQueued.Reset()
-		opsRootfsQueued.Reset()
+		podUsageBytes.Reset()
+		containerUsageBytes.Reset()
 		for i := range pods {
 			pod := &pods[i]
 			if pod.usedBytes != nil {
-				opsQueued.With(prometheus.Labels{
+				podUsageBytes.With(prometheus.Labels{
 					"pod_name":      pod.name,
 					"pod_namespace": pod.namespace,
 					"node_name":     pod.nodeName,
 				}).Set(*pod.usedBytes)
 			}
+			if pod.capacityBytes != nil {
+				podCapacityBytes.With(prometheus.Labels{
+					"pod_name":      pod.name,
+					"pod_namespace": pod.namespace,
+					"node_name":     pod.nodeName,
+				}).Set(*pod.capacityBytes)
+			}
+			if pod.availableBytes != nil {
+				podAvailableBytes.With(prometheus.Labels{
+					"pod_name":      pod.name,
+					"pod_namespace": pod.namespace,
+					"node_name":     pod.nodeName,
+				}).Set(*pod.availableBytes)
+			}
 			for k := range pod.containers {
 				container := &pod.containers[k]
-				opsRootfsQueued.With(prometheus.Labels{
+				containerUsageBytes.With(prometheus.Labels{
 					"pod_name":       pod.name,
 					"pod_namespace":  pod.namespace,
 					"node_name":      pod.nodeName,
@@ -147,11 +188,13 @@ type ephemeralStorageContainerData struct {
 }
 
 type ephemeralStoragePodData struct {
-	name       string
-	nodeName   string
-	namespace  string
-	usedBytes  *float64
-	containers []ephemeralStorageContainerData
+	name           string
+	nodeName       string
+	namespace      string
+	usedBytes      *float64
+	capacityBytes  *float64
+	availableBytes *float64
+	containers     []ephemeralStorageContainerData
 }
 
 func scrapeSingleNode(
@@ -178,6 +221,10 @@ func scrapeSingleNode(
 		if pod.EphemeralStorage != nil {
 			usedBytes := float64(*pod.EphemeralStorage.UsedBytes)
 			podData.usedBytes = &usedBytes
+			capacityBytes := float64(*pod.EphemeralStorage.CapacityBytes)
+			podData.capacityBytes = &capacityBytes
+			availableBytes := float64(*pod.EphemeralStorage.AvailableBytes)
+			podData.availableBytes = &availableBytes
 		}
 
 		for k := range pod.Containers {
