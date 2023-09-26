@@ -1,5 +1,6 @@
 # Build the manager binary
 FROM docker.io/library/golang:1.20.5 as builder
+ARG TARGETARCH
 
 WORKDIR /code
 
@@ -7,7 +8,7 @@ COPY . .
 
 RUN go mod download
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o app main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -a -o app main.go
 
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
