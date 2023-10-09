@@ -26,7 +26,61 @@ import (
 	statsapi "k8s.io/kubelet/pkg/apis/stats/v1alpha1"
 )
 
-var Version = "unknown"
+var (
+	Version       = "unknown"
+	podUsageBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "kubelet_stats_ephemeral_storage_pod_usage",
+		Help: "Used to expose Ephemeral Storage metrics for pod",
+	},
+		[]string{
+			// name of pod for Ephemeral Storage
+			"pod_name",
+			"pod_namespace",
+			// Name of Node where pod is placed.
+			"node_name",
+		},
+	)
+
+	podCapacityBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "kubelet_stats_ephemeral_storage_pod_capacity",
+		Help: "Used to expose Ephemeral Storage capacity for a pod",
+	},
+		[]string{
+			// name of pod for Ephemeral Storage
+			"pod_name",
+			"pod_namespace",
+			// Name of Node where pod is placed.
+			"node_name",
+		},
+	)
+
+	podAvailableBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "kubelet_stats_ephemeral_storage_pod_available",
+		Help: "Used to expose Ephemeral Storage available for a pod",
+	},
+		[]string{
+			// name of pod for Ephemeral Storage
+			"pod_name",
+			"pod_namespace",
+			// Name of Node where pod is placed.
+			"node_name",
+		},
+	)
+
+	containerUsageBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "kubelet_stats_rootfs_pod_container_usage",
+		Help: "Used to expose rootfs metrics for containers",
+	},
+		[]string{
+			// name of pod for Ephemeral Storage
+			"pod_name",
+			"pod_namespace",
+			"container_name",
+			// Name of Node where pod is placed.
+			"node_name",
+		},
+	)
+)
 
 type Config struct {
 	logFormat   string
@@ -68,140 +122,96 @@ func setupClient(cfg Config) *kubernetes.Clientset {
 	return cs
 }
 
-func getMetrics(interval time.Duration, cs *kubernetes.Clientset) {
-	podUsageBytes := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "kubelet_stats_ephemeral_storage_pod_usage",
-		Help: "Used to expose Ephemeral Storage metrics for pod",
-	},
-		[]string{
-			// name of pod for Ephemeral Storage
-			"pod_name",
-			"pod_namespace",
-			// Name of Node where pod is placed.
-			"node_name",
-		},
-	)
-
-	podCapacityBytes := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "kubelet_stats_ephemeral_storage_pod_capacity",
-		Help: "Used to expose Ephemeral Storage capacity for a pod",
-	},
-		[]string{
-			// name of pod for Ephemeral Storage
-			"pod_name",
-			"pod_namespace",
-			// Name of Node where pod is placed.
-			"node_name",
-		},
-	)
-
-	podAvailableBytes := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "kubelet_stats_ephemeral_storage_pod_available",
-		Help: "Used to expose Ephemeral Storage available for a pod",
-	},
-		[]string{
-			// name of pod for Ephemeral Storage
-			"pod_name",
-			"pod_namespace",
-			// Name of Node where pod is placed.
-			"node_name",
-		},
-	)
-
-	containerUsageBytes := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "kubelet_stats_rootfs_pod_container_usage",
-		Help: "Used to expose rootfs metrics for containers",
-	},
-		[]string{
-			// name of pod for Ephemeral Storage
-			"pod_name",
-			"pod_namespace",
-			"container_name",
-			// Name of Node where pod is placed.
-			"node_name",
-		},
-	)
-
-	prometheus.MustRegister(podUsageBytes, podCapacityBytes, podAvailableBytes, containerUsageBytes)
-
-	log.Debug("getMetrics has been invoked")
+func metricsLoop(interval time.Duration, cs *kubernetes.Clientset) {
+	log.Debug("metricsLoop has been invoked")
 
 	for {
-		nodes, err := cs.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
+		ctx := context.Background()
+		err := singleRun(ctx, cs)
 		if err != nil {
 			log.Errorf("ErrorBadRequst : %s", err.Error())
-			time.Sleep(time.Second * 60)
-			continue
-		}
-		var pods []ephemeralStoragePodData
-		for i := range nodes.Items {
-			currentNode := nodes.Items[i].Name
-			node, err := scrapeSingleNode(cs, currentNode)
-			if err != nil {
-				log.Errorf("ErrorBadRequst : %s", err.Error())
-				continue
-			}
-			pods = append(pods, node...)
-		}
-		podUsageBytes.Reset()
-		containerUsageBytes.Reset()
-		for i := range pods {
-			pod := &pods[i]
-			if pod.usedBytes != nil {
-				podUsageBytes.With(prometheus.Labels{
-					"pod_name":      pod.name,
-					"pod_namespace": pod.namespace,
-					"node_name":     pod.nodeName,
-				}).Set(*pod.usedBytes)
-			}
-			if pod.capacityBytes != nil {
-				podCapacityBytes.With(prometheus.Labels{
-					"pod_name":      pod.name,
-					"pod_namespace": pod.namespace,
-					"node_name":     pod.nodeName,
-				}).Set(*pod.capacityBytes)
-			}
-			if pod.availableBytes != nil {
-				podAvailableBytes.With(prometheus.Labels{
-					"pod_name":      pod.name,
-					"pod_namespace": pod.namespace,
-					"node_name":     pod.nodeName,
-				}).Set(*pod.availableBytes)
-			}
-			for k := range pod.containers {
-				container := &pod.containers[k]
-				containerUsageBytes.With(prometheus.Labels{
-					"pod_name":       pod.name,
-					"pod_namespace":  pod.namespace,
-					"node_name":      pod.nodeName,
-					"container_name": container.name,
-				}).Set(container.usedBytes)
-			}
 		}
 		time.Sleep(interval)
 	}
 }
 
+func singleRun(ctx context.Context, cs *kubernetes.Clientset) error {
+	nodes, err := cs.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	podUsageBytes.Reset()
+	podCapacityBytes.Reset()
+	containerUsageBytes.Reset()
+	podAvailableBytes.Reset()
+	var pods []ephemeralStoragePodData
+	for i := range nodes.Items {
+		currentNode := nodes.Items[i].Name
+		node, err := scrapeSingleNode(ctx, cs, currentNode)
+		if err != nil {
+			log.Errorf("ErrorBadRequst : %s", err.Error())
+			continue
+		}
+		pods = append(pods, node...)
+	}
+	for i := range pods {
+		pod := &pods[i]
+		if pod.ephemeral {
+			setGauge(podUsageBytes, prometheus.Labels{
+				"pod_name":      pod.name,
+				"pod_namespace": pod.namespace,
+				"node_name":     pod.nodeName,
+			}, pod.usedBytes)
+			setGauge(podCapacityBytes, prometheus.Labels{
+				"pod_name":      pod.name,
+				"pod_namespace": pod.namespace,
+				"node_name":     pod.nodeName,
+			}, pod.capacityBytes)
+			setGauge(podAvailableBytes, prometheus.Labels{
+				"pod_name":      pod.name,
+				"pod_namespace": pod.namespace,
+				"node_name":     pod.nodeName,
+			}, pod.availableBytes)
+		}
+		for k := range pod.containers {
+			container := &pod.containers[k]
+			setGauge(containerUsageBytes, prometheus.Labels{
+				"pod_name":       pod.name,
+				"pod_namespace":  pod.namespace,
+				"node_name":      pod.nodeName,
+				"container_name": container.name,
+			}, container.usedBytes)
+		}
+	}
+	return nil
+}
+
+func setGauge(gauge *prometheus.GaugeVec, labels prometheus.Labels, data uint64) {
+	gauge.With(labels).Set(float64(data))
+}
+
 type ephemeralStorageContainerData struct {
 	name      string
-	usedBytes float64
+	usedBytes uint64
 }
 
 type ephemeralStoragePodData struct {
 	name           string
 	nodeName       string
 	namespace      string
-	usedBytes      *float64
-	capacityBytes  *float64
-	availableBytes *float64
+	ephemeral      bool
+	usedBytes      uint64
+	capacityBytes  uint64
+	availableBytes uint64
 	containers     []ephemeralStorageContainerData
 }
 
 func scrapeSingleNode(
+	ctx context.Context,
 	cs *kubernetes.Clientset,
 	currentNode string,
 ) ([]ephemeralStoragePodData, error) {
-	content, err := cs.RESTClient().Get().AbsPath(fmt.Sprintf("/api/v1/nodes/%s/proxy/stats/summary", currentNode)).DoRaw(context.Background())
+	content, err := cs.RESTClient().Get().AbsPath(fmt.Sprintf("/api/v1/nodes/%s/proxy/stats/summary", currentNode)).DoRaw(ctx)
 	if err != nil {
 		return []ephemeralStoragePodData{}, err
 	}
@@ -213,32 +223,34 @@ func scrapeSingleNode(
 	var pods []ephemeralStoragePodData
 	nodeName := summary.Node.NodeName
 	for i := range summary.Pods {
-		var podData = ephemeralStoragePodData{}
 		pod := &summary.Pods[i]
-		podData.name = pod.PodRef.Name
-		podData.namespace = pod.PodRef.Namespace
-		podData.nodeName = nodeName
-		if pod.EphemeralStorage != nil {
-			usedBytes := float64(*pod.EphemeralStorage.UsedBytes)
-			podData.usedBytes = &usedBytes
-			capacityBytes := float64(*pod.EphemeralStorage.CapacityBytes)
-			podData.capacityBytes = &capacityBytes
-			availableBytes := float64(*pod.EphemeralStorage.AvailableBytes)
-			podData.availableBytes = &availableBytes
-		}
-
-		for k := range pod.Containers {
-			container := &pod.Containers[k]
-			if container.Rootfs != nil {
-				podData.containers = append(podData.containers, ephemeralStorageContainerData{
-					name:      container.Name,
-					usedBytes: float64(*container.Rootfs.UsedBytes),
-				})
-			}
-		}
-		pods = append(pods, podData)
+		pods = append(pods, extractSinglePodData(pod, nodeName))
 	}
 	return pods, nil
+}
+
+func extractSinglePodData(pod *statsapi.PodStats, nodeName string) ephemeralStoragePodData {
+	var podData = ephemeralStoragePodData{}
+	podData.name = pod.PodRef.Name
+	podData.namespace = pod.PodRef.Namespace
+	podData.nodeName = nodeName
+	if pod.EphemeralStorage != nil {
+		podData.ephemeral = true
+		podData.usedBytes = *pod.EphemeralStorage.UsedBytes
+		podData.capacityBytes = *pod.EphemeralStorage.CapacityBytes
+		podData.availableBytes = *pod.EphemeralStorage.AvailableBytes
+	}
+
+	for k := range pod.Containers {
+		container := &pod.Containers[k]
+		if container.Rootfs != nil {
+			podData.containers = append(podData.containers, ephemeralStorageContainerData{
+				name:      container.Name,
+				usedBytes: *container.Rootfs.UsedBytes,
+			})
+		}
+	}
+	return podData
 }
 
 // allLogLevelsAsStrings returns all logrus levels as a list of strings
@@ -291,8 +303,9 @@ func main() {
 		log.Fatalf("flag parsing error: %v", err)
 	}
 
+	prometheus.MustRegister(podUsageBytes, podCapacityBytes, podAvailableBytes, containerUsageBytes)
 	cs := setupClient(cfg)
-	go getMetrics(cfg.interval, cs)
+	go metricsLoop(cfg.interval, cs)
 	http.Handle("/metrics", promhttp.Handler())
 
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.metricsPort), nil); err != nil {
