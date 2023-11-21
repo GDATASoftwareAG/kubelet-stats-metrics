@@ -129,7 +129,7 @@ func metricsLoop(interval time.Duration, cs *kubernetes.Clientset) {
 		ctx := context.Background()
 		err := singleRun(ctx, cs)
 		if err != nil {
-			log.Errorf("ErrorBadRequst : %s", err.Error())
+			log.Errorf("ErrorBadRequest : %s", err.Error())
 		}
 		time.Sleep(interval)
 	}
@@ -149,7 +149,7 @@ func singleRun(ctx context.Context, cs *kubernetes.Clientset) error {
 		currentNode := nodes.Items[i].Name
 		node, err := scrapeSingleNode(ctx, cs, currentNode)
 		if err != nil {
-			log.Errorf("ErrorBadRequst : %s", err.Error())
+			log.Errorf("ErrorBadRequest : %s", err.Error())
 			continue
 		}
 		pods = append(pods, node...)
