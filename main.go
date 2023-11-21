@@ -309,6 +309,6 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.metricsPort), nil); err != nil {
-		log.Fatalf("Listener Falied : %s\n", err.Error())
+		log.Fatalf("Listener Failed : %s\n", err.Error())
 	}
 }
