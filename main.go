@@ -129,7 +129,7 @@ func metricsLoop(interval time.Duration, cs *kubernetes.Clientset) {
 		ctx := context.Background()
 		err := singleRun(ctx, cs)
 		if err != nil {
-			log.Errorf("ErrorBadRequst : %s", err.Error())
+			log.Errorf("ErrorBadRequest : %s", err.Error())
 		}
 		time.Sleep(interval)
 	}
@@ -149,7 +149,7 @@ func singleRun(ctx context.Context, cs *kubernetes.Clientset) error {
 		currentNode := nodes.Items[i].Name
 		node, err := scrapeSingleNode(ctx, cs, currentNode)
 		if err != nil {
-			log.Errorf("ErrorBadRequst : %s", err.Error())
+			log.Errorf("ErrorBadRequest : %s", err.Error())
 			continue
 		}
 		pods = append(pods, node...)
@@ -309,6 +309,6 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.metricsPort), nil); err != nil {
-		log.Fatalf("Listener Falied : %s\n", err.Error())
+		log.Fatalf("Listener Failed : %s\n", err.Error())
 	}
 }

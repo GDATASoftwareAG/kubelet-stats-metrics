@@ -10,7 +10,7 @@ spec:
       - {{ .Release.Namespace }}
   selector:
     matchLabels:
-      k8s-app: {{ .Release.Name }}
+      {{- include "kubelet-stats-metrics.selectorLabels" . | nindent 8 }}
   podMetricsEndpoints:
     - port: http
       interval: 30s

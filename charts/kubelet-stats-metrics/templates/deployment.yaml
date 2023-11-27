@@ -16,7 +16,7 @@ spec:
       labels:
         {{- include "kubelet-stats-metrics.selectorLabels" . | nindent 8 }}
     spec:
-      serviceAccountName: kubelet-stats-metrics
+      serviceAccountName: {{ include "kubelet-stats-metrics.fullname" . }}
       containers:
         - name: metrics
           image: {{ .Values.image }}
